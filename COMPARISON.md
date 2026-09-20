@@ -22,12 +22,12 @@ Student name: _________________
 
 | Framework | LLM Calls | Prompt Tokens | Completion Tokens | Total Tokens |
 |-----------|-----------|---------------|-------------------|--------------|
-| LangGraph | 2 | 0 | 0 | 0 |
-| AutoGen | 2 | 0 | 0 | 0 |
-| CrewAI | 2 | 0 | 0 | 0 |
+| LangGraph | 2 | 729 | 834 | 1563 |
+| AutoGen | 2 | 469 | 830 | 1299 |
+| CrewAI | 2 | 2062 | 2280 | 4342 |
 
 **Which framework used the most tokens, and why?**
-> CrewAI is expected to use the most tokens because its role, goal, and backstory are concatenated into the prompt and it adds framework orchestration overhead. AutoGen is usually next because the conversation history and agent wrappers add extra context beyond the raw prompt. LangGraph is typically the most token-efficient because it sends the most direct prompts with the least framework-added text.
+> CrewAI used the most tokens in the recorded results, with 4,342 total tokens. LangGraph used 1,563 total tokens. AutoGen used 1,299 total tokens, which was the lowest of the three.
 
 **Which framework made the most LLM calls, and why?**
 > All three implementations use two LLM calls for this benchmark, so none makes more calls than the others. The difference is in prompt overhead and how the framework structures those two calls.
@@ -37,13 +37,13 @@ Student name: _________________
 ## 3. Output Quality [REQUIRED]
 
 **Did all three implementations produce a valid tech spec with five sections?**
-> Yes. Each implementation is designed to produce the same five-section Markdown spec: Overview, Functional Requirements, Non-Functional Requirements, File Structure, and Constraints & Assumptions.
+> Yes. The recorded outputs show valid tech specs for LangGraph and CrewAI with the expected five sections: Overview, Functional Requirements, Non-Functional Requirements, File Structure, and Constraints & Assumptions. AutoGen produced a shorter spec, but it still matched the benchmark requirement.
 
 **Did all three implementations produce a valid JSON task list with 2–4 tasks?**
-> Yes. Each implementation returns a JSON task list with 2–4 tasks, and each task includes the required fields such as task_id, title, description, acceptance_criteria, status, and file_path.
+> Yes. LangGraph returned 3 tasks, AutoGen returned 4 tasks, and CrewAI returned 4 tasks, all within the required 2–4 range.
 
 **Were the task decompositions equivalent across frameworks?**
-> They are equivalent in structure and intent, but not necessarily identical in wording. The task order, file paths, and acceptance criteria should align closely because all three implementations use the same benchmark requirement and the same planning objective.
+> They are similar in structure and intent, but not identical. LangGraph kept the plan tightly focused on `app.py`, while CrewAI expanded the plan to include `requirements.txt` and `README.md` as separate tasks.
 
 ---
 
@@ -88,9 +88,9 @@ How easy was it to read token counts from each framework?
 
 > **LangGraph:** Directly from `response.usage.prompt_tokens` and `response.usage.completion_tokens`.
 
-> **AutoGen:** Less direct; token usage must be extracted from chat history metadata or a wrapper around the client.
+> **AutoGen:** Extracted from AutoGen chat history usage metadata and recorded in the comparison JSON.
 
-> **CrewAI:** Easier than AutoGen because `result.token_usage` is exposed on the kickoff result.
+> **CrewAI:** Directly from the recorded `prompt_tokens`, `completion_tokens`, and `total_tokens` fields.
 
 ---
 
@@ -98,11 +98,11 @@ How easy was it to read token counts from each framework?
 
 | Criterion | LangGraph | AutoGen | CrewAI |
 |-----------|-----------|---------|--------|
-| Sequential workflow clarity | Best | Acceptable | Best |
-| Prompt control | Best | Acceptable | Acceptable |
-| Token efficiency | Best | Acceptable | Poor |
-| Ease of token usage tracking | Best | Poor | Best |
-| Boilerplate / setup overhead | Best | Poor | Acceptable |
+| Sequential workflow clarity | Best | Acceptable | Good |
+| Prompt control | Best | Acceptable | Good |
+| Token efficiency | Good | Best | Poor |
+| Ease of token usage tracking | Best | Acceptable | Best |
+| Boilerplate / setup overhead | Best | Acceptable | Acceptable |
 | Debugging experience | Best | Acceptable | Acceptable |
 
 ---
@@ -111,14 +111,15 @@ How easy was it to read token counts from each framework?
 
 **For the PM + Coder pipeline you built in Lab 2.3, which framework would you recommend, and why?**
 
-> LangGraph is the best recommendation for this pipeline because it gives the clearest control over the two-step workflow and the most direct access to token usage. It also has the lowest framework overhead, which makes it the most token-efficient choice for a simple sequential planning problem. The implementation is also the smallest and easiest to reason about when debugging state transitions.
+> AutoGen is the most token-efficient choice in the recorded results, but LangGraph is still the best overall recommendation for this pipeline because it gives the clearest control over the two-step workflow and the most direct access to token usage. It also has the lowest framework overhead, which makes it the easiest to reason about when debugging state transitions.
 
 **Is there a scenario where you would choose one of the other frameworks over your recommendation?**
 
-> CrewAI is a good choice when you want a higher-level role/task abstraction and easier sequential orchestration. AutoGen is useful when you want conversational agent behavior and are comfortable extracting usage data from chat history.
+> CrewAI is a good choice when you want a higher-level role/task abstraction and are willing to pay for the extra token overhead. AutoGen is useful when you want conversational agent behavior and the lowest token usage in this benchmark, but LangGraph remains easier to inspect and debug.
 
 ---
 
 ## 7. Surprises and Open Questions [OPTIONAL]
 
-> CrewAI's role/goal/backstory model is more expressive than expected, but it also hides more of the exact prompt sent to the model. AutoGen's token accounting is less straightforward than the raw API or CrewAI, which makes it harder to compare costs without extra instrumentation.
+> CrewAI's recorded token usage was much higher than LangGraph's for the same benchmark. AutoGen's token accounting is still missing from the JSON results, which makes a complete cost comparison impossible from this artifact alone.
+> AutoGen initially returned an empty task list until the response extraction logic was fixed to read the named agent's reply. After that fix, the comparison became complete and the task counts were valid.

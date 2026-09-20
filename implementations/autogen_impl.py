@@ -186,12 +186,30 @@ Rules:
 
 def _strip_fences(text: str) -> str:
     if not text or not str(text).strip():
-        return '{"tasks": []}'
-    text = str(text)
-    match = re.search(r'(\{.*\})', text, re.DOTALL)
-    if match:
-        return match.group(1)
-    return text.strip()
+        raise ValueError("AutoGen returned an empty task-decomposition response.")
+
+    text = str(text).strip()
+
+    fenced_match = re.search(
+        r"```(?:json)?\s*(.*?)```",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if fenced_match:
+        text = fenced_match.group(1).strip()
+
+    json_match = re.search(r"(\{.*\})", text, re.DOTALL)
+    return json_match.group(1) if json_match else text
+
+
+def _last_assistant_content(chat_result) -> str:
+    """Return the last non-empty assistant message from an AutoGen chat result."""
+    for message in reversed(getattr(chat_result, "chat_history", []) or []):
+        if message.get("role") == "assistant":
+            content = message.get("content")
+            if content:
+                return str(content).strip()
+    return ""
 
 
 def run(requirement: str) -> PlanningResult:
@@ -224,17 +242,19 @@ def run(requirement: str) -> PlanningResult:
     spec_user = autogen.UserProxyAgent(
         name="spec_user",
         human_input_mode="NEVER",
-        max_consecutive_auto_reply=1,
-        is_termination_msg=lambda _: True,
+        max_consecutive_auto_reply=0,
         code_execution_config=False,
+        default_auto_reply="",
     )
-    spec_result = spec_user.initiate_chat(spec_writer, message=f"Requirement: {requirement}", clear_history=True)
+    spec_result = spec_user.initiate_chat(
+        spec_writer,
+        message=f"Requirement: {requirement}",
+        clear_history=True,
+    )
 
-    spec_text = ""
-    for msg in reversed(getattr(spec_result, "chat_history", []) or []):
-        if msg.get("name") == "spec_writer" or msg.get("role") == "assistant":
-            spec_text = msg.get("content", "")
-            break
+    spec_text = _last_assistant_content(spec_result)
+    if not spec_text:
+        raise RuntimeError("AutoGen spec writer returned an empty response.")
 
     task_writer = autogen.AssistantAgent(
         name="task_writer",
@@ -245,17 +265,19 @@ def run(requirement: str) -> PlanningResult:
     task_user = autogen.UserProxyAgent(
         name="task_user",
         human_input_mode="NEVER",
-        max_consecutive_auto_reply=1,
-        is_termination_msg=lambda _: True,
+        max_consecutive_auto_reply=0,
         code_execution_config=False,
+        default_auto_reply="",
     )
-    task_result = task_user.initiate_chat(task_writer, message=f"Technical specification:\n\n{spec_text}", clear_history=True)
+    task_result = task_user.initiate_chat(
+        task_writer,
+        message=f"Technical specification:\n\n{spec_text}",
+        clear_history=True,
+    )
 
-    tasks_text = ""
-    for msg in reversed(getattr(task_result, "chat_history", []) or []):
-        if msg.get("name") == "task_writer" or msg.get("role") == "assistant":
-            tasks_text = msg.get("content", "")
-            break
+    tasks_text = _last_assistant_content(task_result)
+    if not tasks_text:
+        raise RuntimeError("AutoGen task writer returned an empty response.")
 
     prompt_tokens = completion_tokens = total_tokens = 0
     for agent in [spec_writer, task_writer]:
