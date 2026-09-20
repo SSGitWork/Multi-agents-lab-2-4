@@ -9,28 +9,49 @@ token counts appear in a single dashboard for comparison.
 """
 
 import os
-from openai import OpenAI
+
 from dotenv import load_dotenv
-load_dotenv(override=True)
+from openai import AzureOpenAI, OpenAI
 
 from crewai import LLM
+
+load_dotenv(override=True)
 
 _HELICONE_BASE = os.getenv("HELICONE_BASE_URL")
 _OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 _HELICONE_API_KEY = os.getenv("HELICONE_API_KEY")
 
-def get_llm_client() -> OpenAI:
+_AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+_AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+_AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")
+_AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+
+
+def get_llm_client() -> OpenAI | AzureOpenAI:
     """
-    Return an OpenAI client pre-configured to route through Helicone.
-    Used by the LangGraph implementation (already written in Lab 2.1).
+    Return an LLM client. Prefers Azure OpenAI if environment variables
+    are set, otherwise falls back to Helicone.
     """
+    if _AZURE_OPENAI_API_KEY and _AZURE_OPENAI_ENDPOINT:
+        clean_endpoint = _AZURE_OPENAI_ENDPOINT.strip()
+        if clean_endpoint.endswith("/openai/v1/"):
+            clean_endpoint = clean_endpoint.replace("/openai/v1/", "")
+        elif clean_endpoint.endswith("/openai/v1"):
+            clean_endpoint = clean_endpoint.replace("/openai/v1", "")
+
+        return AzureOpenAI(
+            api_key=_AZURE_OPENAI_API_KEY,
+            api_version=_AZURE_OPENAI_API_VERSION,
+            azure_endpoint=clean_endpoint,
+        )
+
     helicone_api_key = os.environ.get("HELICONE_API_KEY")
     if not helicone_api_key:
         raise EnvironmentError(
-            "HELICONE_API_KEY is not set. "
-            "In Codespaces it is injected automatically. "
-            "Locally, add it to a .env file."
+            "Neither Azure OpenAI nor Helicone API keys are set. "
+            "Please ensure AZURE_OPENAI_API_KEY or HELICONE_API_KEY is in your .env file."
         )
+
     return OpenAI(
         api_key=_OPENROUTER_API_KEY,
         base_url=_HELICONE_BASE,
@@ -50,6 +71,25 @@ def get_autogen_llm_config() -> dict:
     llm_config = get_autogen_llm_config()
     assistant = autogen.AssistantAgent("pm", llm_config=llm_config)
     """
+    if _AZURE_OPENAI_API_KEY and _AZURE_OPENAI_ENDPOINT:
+        clean_endpoint = _AZURE_OPENAI_ENDPOINT.strip()
+        if clean_endpoint.endswith("/openai/v1/"):
+            clean_endpoint = clean_endpoint.replace("/openai/v1/", "")
+        elif clean_endpoint.endswith("/openai/v1"):
+            clean_endpoint = clean_endpoint.replace("/openai/v1", "")
+        return {
+            "config_list": [
+                {
+                    "model": _AZURE_OPENAI_DEPLOYMENT or "build-model1-npe",
+                    "api_key": _AZURE_OPENAI_API_KEY,
+                    "base_url": clean_endpoint,
+                    "api_type": "azure",
+                    "api_version": _AZURE_OPENAI_API_VERSION,
+                }
+            ],
+            "temperature": 0,
+        }
+
     helicone_api_key = os.environ.get("HELICONE_API_KEY")
     if not helicone_api_key:
         raise EnvironmentError("HELICONE_API_KEY is not set.")
@@ -79,6 +119,19 @@ def get_crewai_llm_config() -> dict:
     from crewai import Agent
     agent = Agent(role="PM", llm=get_crewai_llm_config(), ...)
     """
+    if _AZURE_OPENAI_API_KEY and _AZURE_OPENAI_ENDPOINT:
+        clean_endpoint = _AZURE_OPENAI_ENDPOINT.strip()
+        if clean_endpoint.endswith("/openai/v1/"):
+            clean_endpoint = clean_endpoint.replace("/openai/v1/", "")
+        elif clean_endpoint.endswith("/openai/v1"):
+            clean_endpoint = clean_endpoint.replace("/openai/v1", "")
+        return {
+            "model": _AZURE_OPENAI_DEPLOYMENT or "build-model1-npe",
+            "api_key": _AZURE_OPENAI_API_KEY,
+            "base_url": clean_endpoint,
+            "api_version": _AZURE_OPENAI_API_VERSION,
+        }
+
     helicone_api_key = os.environ.get("HELICONE_API_KEY")
     if not helicone_api_key:
         raise EnvironmentError("HELICONE_API_KEY is not set.")
@@ -90,9 +143,26 @@ def get_crewai_llm_config() -> dict:
 
 
 def get_crewai_llm():
+    if _AZURE_OPENAI_API_KEY and _AZURE_OPENAI_ENDPOINT:
+        clean_endpoint = _AZURE_OPENAI_ENDPOINT.strip()
+        if clean_endpoint.endswith("/openai/v1/"):
+            clean_endpoint = clean_endpoint.replace("/openai/v1/", "")
+        elif clean_endpoint.endswith("/openai/v1"):
+            clean_endpoint = clean_endpoint.replace("/openai/v1", "")
+        return LLM(
+            model=_AZURE_OPENAI_DEPLOYMENT or "build-model1-npe",
+            api_key=_AZURE_OPENAI_API_KEY,
+            base_url=clean_endpoint,
+            api_version=_AZURE_OPENAI_API_VERSION,
+        )
     return LLM(
         model="gpt-4.1-mini",
         api_key=_OPENROUTER_API_KEY,
         base_url=_HELICONE_BASE,
     )
-MODEL = "gpt-4.1-mini"
+
+
+if _AZURE_OPENAI_API_KEY and _AZURE_OPENAI_ENDPOINT:
+    MODEL = _AZURE_OPENAI_DEPLOYMENT or "build-model1-npe"
+else:
+    MODEL = "gpt-4.1-mini"
