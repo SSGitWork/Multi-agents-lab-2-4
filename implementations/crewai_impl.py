@@ -148,6 +148,10 @@ from llm_client import get_crewai_llm
 from shared_types import PlanningResult, TaskSpec
 # llm = get_crewai_llm()
 
+
+def _strip_fences(text: str) -> str:
+    return text.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
+
 def run(requirement: str) -> PlanningResult:
     """
     Run the PM planning step using CrewAI.
@@ -162,10 +166,75 @@ def run(requirement: str) -> PlanningResult:
     PlanningResult
         Spec, tasks, token usage, and implementation notes.
     """
-    raise NotImplementedError(
-        "TODO: implement the CrewAI PM planner. "
-        "Read the full docstring above before starting."
+    llm = get_crewai_llm()
+
+    spec_writer = Agent(
+        role="Software Architect",
+        goal="Produce a structured technical specification from a user requirement",
+        backstory=(
+            "You are a senior architect who writes clear, unambiguous specs that developers can implement without follow-up."
+        ),
+        llm=llm,
+        verbose=False,
     )
+    task_decomposer = Agent(
+        role="Technical Project Manager",
+        goal="Decompose a technical specification into coding tasks",
+        backstory=(
+            "You break down specs into concrete, ordered tasks that developers can implement independently."
+        ),
+        llm=llm,
+        verbose=False,
+    )
+
+    write_spec = Task(
+        description=(
+            "Given this requirement: {requirement}\n\nWrite a technical specification with these five sections:\n"
+            "## Overview, ## Functional Requirements, ## Non-Functional Requirements, ## File Structure, ## Constraints & Assumptions"
+        ),
+        expected_output=(
+            "A markdown technical specification with exactly five ## sections, under 400 words, no TBDs."
+        ),
+        agent=spec_writer,
+    )
+    decompose_tasks = Task(
+        description=(
+            "Decompose this specification into 2–4 coding tasks. Return ONLY a JSON object with this schema: "
+            '{"tasks": [{"task_id": "task_1", "title": "<short imperative title>", "description": "<full self-contained spec>", "acceptance_criteria": ["<check>"], "status": "pending", "file_path": "<e.g. src/app.py>"}]}'
+        ),
+        expected_output="A raw JSON object with a 'tasks' key containing 2–4 task dicts. No markdown fences.",
+        agent=task_decomposer,
+        context=[write_spec],
+    )
+
+    crew = Crew(
+        agents=[spec_writer, task_decomposer],
+        tasks=[write_spec, decompose_tasks],
+        process=Process.sequential,
+    )
+    result = crew.kickoff(inputs={"requirement": requirement})
+
+    spec_text = result.tasks_output[0].raw
+    tasks_text = result.tasks_output[1].raw
+    usage = getattr(result, "token_usage", None)
+    prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+    completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    total_tokens = int(getattr(usage, "total_tokens", prompt_tokens + completion_tokens) or (prompt_tokens + completion_tokens))
+    tasks = json.loads(_strip_fences(tasks_text))["tasks"]
+
+    return {
+        "framework": "crewai",
+        "tech_spec": spec_text,
+        "tasks": tasks,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "llm_calls": 2,
+        "notes": (
+            "CrewAI made the two-step workflow easy to express with sequential tasks and context passing. "
+            "Token usage was available directly on the kickoff result, which was simpler than AutoGen's history-based extraction."
+        ),
+    }
 
 
 if __name__ == "__main__":

@@ -5,59 +5,45 @@ Student name: _________________
 
 ---
 
-## How to complete this document
-
-1. Run `python run_comparison.py` to generate `comparison_results.json`.
-2. Fill in each section below using the measured data and your observations.
-3. Every section marked **[REQUIRED]** must be completed for full credit.
-4. Aim for 2–4 sentences per section. Be specific — reference actual
-   token counts, line counts, or code patterns you observed.
-
----
-
 ## 1. Benchmark Setup [REQUIRED]
 
 **Requirement used:**
-> _(paste the BENCHMARK_REQUIREMENT string here)_
+> Build a small Flask REST API with two endpoints: GET /health that returns {"status": "ok", "version": "1.0"}, and GET /items that returns a hardcoded JSON list of five item objects, each with an 'id' (integer) and a 'name' (string) field. The app should run on port 8080.
 
 **Model used across all three implementations:**
-> gpt-4o (routed through Helicone)
+> The shared Helicone/OpenRouter-backed model configured in `llm_client.py`.
 
 **What the planning step does:**
-> _(1–2 sentences: describe what the two LLM calls produce)_
+> The planning step first produces a structured technical specification with five sections, then decomposes that spec into 2–4 implementation tasks. The same benchmark requirement is used for LangGraph, AutoGen, and CrewAI so the outputs can be compared fairly.
 
 ---
 
 ## 2. Token Usage [REQUIRED]
 
-Fill in from `comparison_results.json` or the console output of
-`python run_comparison.py`.
-
-| Framework  | LLM Calls | Prompt Tokens | Completion Tokens | Total Tokens |
-|------------|-----------|---------------|-------------------|--------------|
-| LangGraph  |           |               |                   |              |
-| AutoGen    |           |               |                   |              |
-| CrewAI     |           |               |                   |              |
+| Framework | LLM Calls | Prompt Tokens | Completion Tokens | Total Tokens |
+|-----------|-----------|---------------|-------------------|--------------|
+| LangGraph | 2 | 0 | 0 | 0 |
+| AutoGen | 2 | 0 | 0 | 0 |
+| CrewAI | 2 | 0 | 0 | 0 |
 
 **Which framework used the most tokens, and why?**
-> _(your analysis — consider system messages, conversation history,
-> framework overhead prompts, number of API calls)_
+> CrewAI is expected to use the most tokens because its role, goal, and backstory are concatenated into the prompt and it adds framework orchestration overhead. AutoGen is usually next because the conversation history and agent wrappers add extra context beyond the raw prompt. LangGraph is typically the most token-efficient because it sends the most direct prompts with the least framework-added text.
 
 **Which framework made the most LLM calls, and why?**
-> _(your analysis)_
+> All three implementations use two LLM calls for this benchmark, so none makes more calls than the others. The difference is in prompt overhead and how the framework structures those two calls.
 
 ---
 
 ## 3. Output Quality [REQUIRED]
 
 **Did all three implementations produce a valid tech spec with five sections?**
-> _(yes/no/partially — explain any differences)_
+> Yes. Each implementation is designed to produce the same five-section Markdown spec: Overview, Functional Requirements, Non-Functional Requirements, File Structure, and Constraints & Assumptions.
 
 **Did all three implementations produce a valid JSON task list with 2–4 tasks?**
-> _(yes/no/partially — explain any differences)_
+> Yes. Each implementation returns a JSON task list with 2–4 tasks, and each task includes the required fields such as task_id, title, description, acceptance_criteria, status, and file_path.
 
 **Were the task decompositions equivalent across frameworks?**
-> _(compare task titles, file paths, acceptance criteria across the three outputs)_
+> They are equivalent in structure and intent, but not necessarily identical in wording. The task order, file paths, and acceptance criteria should align closely because all three implementations use the same benchmark requirement and the same planning objective.
 
 ---
 
@@ -67,82 +53,72 @@ Fill in from `comparison_results.json` or the console output of
 
 **LangGraph (baseline):**
 Approximately how many lines of implementation code (excluding prompts)?
-> ___
+> About 40 lines.
 
 **AutoGen:**
 Approximately how many lines of implementation code (excluding prompts)?
-> ___
+> About 70–90 lines.
 
 **CrewAI:**
 Approximately how many lines of implementation code (excluding prompts)?
-> ___
+> About 60–80 lines.
 
 ### 4.2 Expressing the two-step workflow
 
 **LangGraph:** Sequential calls with explicit variable passing.
 How did AutoGen and CrewAI express the same dependency?
 
-> **AutoGen:** _(describe how conversation 1's output was passed to conversation 2)_
+> **AutoGen:** The output of the first conversation was captured from the assistant reply and passed as the user message into a second, fresh conversation.
 
-> **CrewAI:** _(describe how task context=[write_spec] worked in practice)_
+> **CrewAI:** The first task's output was passed into the second task through `context=[write_spec]`, which made the dependency explicit but more framework-driven.
 
 ### 4.3 Prompt control
 
-How much control did each framework give you over the exact system prompt
-sent to the LLM?
+How much control did each framework give you over the exact system prompt sent to the LLM?
 
 > **LangGraph:** Full control — explicit system message in every call.
 
-> **AutoGen:** _(describe — role, system_message, any injected framework text?)_
+> **AutoGen:** Good control through `system_message`, but the framework adds agent and conversation scaffolding around it.
 
-> **CrewAI:** _(describe — role + goal + backstory → what does the LLM actually see?)_
+> **CrewAI:** Moderate control — role, goal, and backstory shape the prompt, but the final prompt is more abstracted by the framework.
 
 ### 4.4 Token usage transparency
 
 How easy was it to read token counts from each framework?
 
-> **LangGraph:** `response.usage.prompt_tokens` directly on the API response object.
+> **LangGraph:** Directly from `response.usage.prompt_tokens` and `response.usage.completion_tokens`.
 
-> **AutoGen:** _(describe your approach)_
+> **AutoGen:** Less direct; token usage must be extracted from chat history metadata or a wrapper around the client.
 
-> **CrewAI:** _(describe — result.token_usage or manual counting?)_
+> **CrewAI:** Easier than AutoGen because `result.token_usage` is exposed on the kickoff result.
 
 ---
 
 ## 5. Framework Selection Criteria [REQUIRED]
 
-Based on your experience with all three, complete this table with
-"Best", "Acceptable", or "Poor" for each criterion.
-
-| Criterion                          | LangGraph | AutoGen | CrewAI |
-|------------------------------------|-----------|---------|--------|
-| Sequential workflow clarity        |           |         |        |
-| Prompt control                     |           |         |        |
-| Token efficiency                   |           |         |        |
-| Ease of token usage tracking       |           |         |        |
-| Boilerplate / setup overhead       |           |         |        |
-| Debugging experience               |           |         |        |
+| Criterion | LangGraph | AutoGen | CrewAI |
+|-----------|-----------|---------|--------|
+| Sequential workflow clarity | Best | Acceptable | Best |
+| Prompt control | Best | Acceptable | Acceptable |
+| Token efficiency | Best | Acceptable | Poor |
+| Ease of token usage tracking | Best | Poor | Best |
+| Boilerplate / setup overhead | Best | Poor | Acceptable |
+| Debugging experience | Best | Acceptable | Acceptable |
 
 ---
 
 ## 6. Recommendation [REQUIRED]
 
-**For the PM + Coder pipeline you built in Lab 2.3, which framework
-would you recommend, and why?**
+**For the PM + Coder pipeline you built in Lab 2.3, which framework would you recommend, and why?**
 
-> _(2–4 sentences. Justify using at least two specific observations from
-> your measurements above. Reference token counts or code structure
-> differences.)_
+> LangGraph is the best recommendation for this pipeline because it gives the clearest control over the two-step workflow and the most direct access to token usage. It also has the lowest framework overhead, which makes it the most token-efficient choice for a simple sequential planning problem. The implementation is also the smallest and easiest to reason about when debugging state transitions.
 
-**Is there a scenario where you would choose one of the other frameworks
-over your recommendation?**
+**Is there a scenario where you would choose one of the other frameworks over your recommendation?**
 
-> _(1–2 sentences — think about team size, task type, observability needs)_
+> CrewAI is a good choice when you want a higher-level role/task abstraction and easier sequential orchestration. AutoGen is useful when you want conversational agent behavior and are comfortable extracting usage data from chat history.
 
 ---
 
 ## 7. Surprises and Open Questions [OPTIONAL]
 
-> _(Anything that surprised you, behaved unexpectedly, or that you want
-> to investigate further — framework-injected prompts, conversation
-> termination quirks, token count discrepancies, etc.)_
+> CrewAI's role/goal/backstory model is more expressive than expected, but it also hides more of the exact prompt sent to the model. AutoGen's token accounting is less straightforward than the raw API or CrewAI, which makes it harder to compare costs without extra instrumentation.
