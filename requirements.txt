@@ -4,3 +4,4 @@ python-dotenv>=1.0.0
 pytest>=8.0.0
 chromadb
 autogen
+crewai[azure-ai-inference]

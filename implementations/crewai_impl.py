@@ -138,10 +138,6 @@ def run(requirement: str) -> PlanningResult
 import json
 from dotenv import load_dotenv
 load_dotenv()
-import sys
-import pysqlite3
-
-sys.modules["sqlite3"] = pysqlite3
 
 from crewai import Agent, Task, Crew, Process
 from llm_client import get_crewai_llm

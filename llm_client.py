@@ -27,22 +27,26 @@ _AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")
 _AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")
 
 
+def _clean_azure_endpoint(endpoint: str) -> str:
+    endpoint = endpoint.strip().rstrip("/")
+
+    for suffix in ("/openai/v1", "/openai"):
+        if endpoint.endswith(suffix):
+            endpoint = endpoint[:-len(suffix)].rstrip("/")
+
+    return endpoint
+
+
 def get_llm_client() -> OpenAI | AzureOpenAI:
     """
     Return an LLM client. Prefers Azure OpenAI if environment variables
     are set, otherwise falls back to Helicone.
     """
     if _AZURE_OPENAI_API_KEY and _AZURE_OPENAI_ENDPOINT:
-        clean_endpoint = _AZURE_OPENAI_ENDPOINT.strip()
-        if clean_endpoint.endswith("/openai/v1/"):
-            clean_endpoint = clean_endpoint.replace("/openai/v1/", "")
-        elif clean_endpoint.endswith("/openai/v1"):
-            clean_endpoint = clean_endpoint.replace("/openai/v1", "")
-
         return AzureOpenAI(
             api_key=_AZURE_OPENAI_API_KEY,
             api_version=_AZURE_OPENAI_API_VERSION,
-            azure_endpoint=clean_endpoint,
+            azure_endpoint=_clean_azure_endpoint(_AZURE_OPENAI_ENDPOINT),
         )
 
     helicone_api_key = os.environ.get("HELICONE_API_KEY")
@@ -72,22 +76,18 @@ def get_autogen_llm_config() -> dict:
     assistant = autogen.AssistantAgent("pm", llm_config=llm_config)
     """
     if _AZURE_OPENAI_API_KEY and _AZURE_OPENAI_ENDPOINT:
-        clean_endpoint = _AZURE_OPENAI_ENDPOINT.strip()
-        if clean_endpoint.endswith("/openai/v1/"):
-            clean_endpoint = clean_endpoint.replace("/openai/v1/", "")
-        elif clean_endpoint.endswith("/openai/v1"):
-            clean_endpoint = clean_endpoint.replace("/openai/v1", "")
         return {
             "config_list": [
                 {
-                    "model": _AZURE_OPENAI_DEPLOYMENT or "build-model1-npe",
+                    "model": _AZURE_OPENAI_DEPLOYMENT,
                     "api_key": _AZURE_OPENAI_API_KEY,
-                    "base_url": clean_endpoint,
+                    "base_url": _clean_azure_endpoint(_AZURE_OPENAI_ENDPOINT),
                     "api_type": "azure",
                     "api_version": _AZURE_OPENAI_API_VERSION,
                 }
             ],
             "temperature": 0,
+            "cache_seed": None,
         }
 
     helicone_api_key = os.environ.get("HELICONE_API_KEY")
@@ -120,45 +120,39 @@ def get_crewai_llm_config() -> dict:
     agent = Agent(role="PM", llm=get_crewai_llm_config(), ...)
     """
     if _AZURE_OPENAI_API_KEY and _AZURE_OPENAI_ENDPOINT:
-        clean_endpoint = _AZURE_OPENAI_ENDPOINT.strip()
-        if clean_endpoint.endswith("/openai/v1/"):
-            clean_endpoint = clean_endpoint.replace("/openai/v1/", "")
-        elif clean_endpoint.endswith("/openai/v1"):
-            clean_endpoint = clean_endpoint.replace("/openai/v1", "")
+        # Fallback to standard dict if called, though crewai_impl now uses get_crewai_llm()
         return {
-            "model": _AZURE_OPENAI_DEPLOYMENT or "build-model1-npe",
+            "model": f"azure/{_AZURE_OPENAI_DEPLOYMENT}",
             "api_key": _AZURE_OPENAI_API_KEY,
-            "base_url": clean_endpoint,
-            "api_version": _AZURE_OPENAI_API_VERSION,
+            "base_url": _clean_azure_endpoint(_AZURE_OPENAI_ENDPOINT),
         }
 
     helicone_api_key = os.environ.get("HELICONE_API_KEY")
     if not helicone_api_key:
         raise EnvironmentError("HELICONE_API_KEY is not set.")
     return {
-        "model":    "gpt-4.1-mini",
+        "model":    DEFAULT_MODEL,
         "api_key":  _OPENROUTER_API_KEY,
         "base_url": _HELICONE_BASE,
     }
 
 
 def get_crewai_llm():
+    from crewai import LLM
+
     if _AZURE_OPENAI_API_KEY and _AZURE_OPENAI_ENDPOINT:
-        clean_endpoint = _AZURE_OPENAI_ENDPOINT.strip()
-        if clean_endpoint.endswith("/openai/v1/"):
-            clean_endpoint = clean_endpoint.replace("/openai/v1/", "")
-        elif clean_endpoint.endswith("/openai/v1"):
-            clean_endpoint = clean_endpoint.replace("/openai/v1", "")
         return LLM(
-            model=_AZURE_OPENAI_DEPLOYMENT or "build-model1-npe",
+            model=f"azure/{_AZURE_OPENAI_DEPLOYMENT}",
             api_key=_AZURE_OPENAI_API_KEY,
-            base_url=clean_endpoint,
+            endpoint=_clean_azure_endpoint(_AZURE_OPENAI_ENDPOINT),
             api_version=_AZURE_OPENAI_API_VERSION,
+            temperature=0,
         )
     return LLM(
-        model="gpt-4.1-mini",
+        model=DEFAULT_MODEL,
         api_key=_OPENROUTER_API_KEY,
         base_url=_HELICONE_BASE,
+        temperature=0,
     )
 
 
@@ -166,3 +160,6 @@ if _AZURE_OPENAI_API_KEY and _AZURE_OPENAI_ENDPOINT:
     MODEL = _AZURE_OPENAI_DEPLOYMENT or "build-model1-npe"
 else:
     MODEL = "gpt-4.1-mini"
+
+# Backward-compatible alias used by the Lab 1.4 reference implementations.
+DEFAULT_MODEL = MODEL

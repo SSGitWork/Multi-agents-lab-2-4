@@ -128,15 +128,13 @@ def run(requirement: str) -> PlanningResult
 """
 
 import json
+import re
+import uuid
 from dotenv import load_dotenv
 load_dotenv()
-import sys
-import pysqlite3
-
-sys.modules["sqlite3"] = pysqlite3
 
 import autogen
-from llm_client import get_autogen_llm_config
+from llm_client import DEFAULT_MODEL, get_autogen_llm_config
 from shared_types import PlanningResult, TaskSpec
 
 
@@ -187,20 +185,13 @@ Rules:
 
 
 def _strip_fences(text: str) -> str:
-        return text.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
-
-
-def _extract_usage(messages: list[dict]) -> tuple[int, int, int]:
-        prompt = completion = total = 0
-        for msg in messages:
-                usage = msg.get("usage") if isinstance(msg, dict) else None
-                if usage:
-                        prompt += int(usage.get("prompt_tokens", 0) or 0)
-                        completion += int(usage.get("completion_tokens", 0) or 0)
-                        total += int(usage.get("total_tokens", 0) or 0)
-        if total == 0:
-                total = prompt + completion
-        return prompt, completion, total
+    if not text or not str(text).strip():
+        return '{"tasks": []}'
+    text = str(text)
+    match = re.search(r'(\{.*\})', text, re.DOTALL)
+    if match:
+        return match.group(1)
+    return text.strip()
 
 
 def run(requirement: str) -> PlanningResult:
@@ -218,40 +209,72 @@ def run(requirement: str) -> PlanningResult:
         Spec, tasks, token usage, and implementation notes.
     """
     llm_config = get_autogen_llm_config()
+    llm_config["cache_seed"] = uuid.uuid4().int
+
+    model_name = DEFAULT_MODEL
+    if llm_config.get("config_list"):
+        model_name = llm_config["config_list"][0].get("model", DEFAULT_MODEL)
 
     spec_writer = autogen.AssistantAgent(
         name="spec_writer",
         system_message=_SPEC_SYSTEM,
         llm_config=llm_config,
+        code_execution_config={"use_docker": False},
     )
     spec_user = autogen.UserProxyAgent(
         name="spec_user",
         human_input_mode="NEVER",
         max_consecutive_auto_reply=1,
         is_termination_msg=lambda _: True,
+        code_execution_config=False,
     )
-    spec_user.initiate_chat(spec_writer, message=f"Requirement: {requirement}")
-    spec_text = spec_writer.last_message()["content"]
+    spec_result = spec_user.initiate_chat(spec_writer, message=f"Requirement: {requirement}", clear_history=True)
+
+    spec_text = ""
+    for msg in reversed(getattr(spec_result, "chat_history", []) or []):
+        if msg.get("name") == "spec_writer" or msg.get("role") == "assistant":
+            spec_text = msg.get("content", "")
+            break
 
     task_writer = autogen.AssistantAgent(
         name="task_writer",
         system_message=_DECOMPOSE_SYSTEM,
         llm_config=llm_config,
+        code_execution_config={"use_docker": False},
     )
     task_user = autogen.UserProxyAgent(
         name="task_user",
         human_input_mode="NEVER",
         max_consecutive_auto_reply=1,
         is_termination_msg=lambda _: True,
+        code_execution_config=False,
     )
-    task_user.initiate_chat(task_writer, message=f"Technical specification:\n\n{spec_text}")
-    tasks_text = task_writer.last_message()["content"]
+    task_result = task_user.initiate_chat(task_writer, message=f"Technical specification:\n\n{spec_text}", clear_history=True)
 
-    prompt_tokens, completion_tokens, total_tokens = _extract_usage(
-        spec_writer.chat_messages[spec_user] + task_writer.chat_messages[task_user]
-    )
+    tasks_text = ""
+    for msg in reversed(getattr(task_result, "chat_history", []) or []):
+        if msg.get("name") == "task_writer" or msg.get("role") == "assistant":
+            tasks_text = msg.get("content", "")
+            break
 
-    tasks = json.loads(_strip_fences(tasks_text))["tasks"]
+    prompt_tokens = completion_tokens = total_tokens = 0
+    for agent in [spec_writer, task_writer]:
+        if hasattr(agent, "client") and agent.client:
+            usage_summary = getattr(agent.client, "total_usage_summary", {}) or {}
+            if isinstance(usage_summary, dict):
+                if "prompt_tokens" in usage_summary or "total_tokens" in usage_summary:
+                    prompt_tokens += int(usage_summary.get("prompt_tokens", 0) or 0)
+                    completion_tokens += int(usage_summary.get("completion_tokens", 0) or 0)
+                    total_tokens += int(usage_summary.get("total_tokens", 0) or 0)
+                else:
+                    for val in usage_summary.values():
+                        if isinstance(val, dict):
+                            prompt_tokens += int(val.get("prompt_tokens", 0) or 0)
+                            completion_tokens += int(val.get("completion_tokens", 0) or 0)
+                            total_tokens += int(val.get("total_tokens", 0) or 0)
+
+    # Safely get "tasks" array, defaulting to empty list if missing
+    tasks = json.loads(_strip_fences(tasks_text)).get("tasks", [])
     return {
         "framework": "autogen",
         "tech_spec": spec_text,
